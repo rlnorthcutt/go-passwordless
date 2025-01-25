@@ -46,7 +46,7 @@ func defaultIDGenerator() string {
 	_, err := rand.Read(b)
 	// In production code, you might handle err or panic if it fails
 	if err != nil {
-		// fallback or panic
+		panic("failed to generate random bytes for ID")
 	}
 	return hex.EncodeToString(b)
 }
