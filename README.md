@@ -2,6 +2,15 @@
 
 `go-passwordless` is a lightweight, extensible Go library that provides a secure, passwordless authentication system. It allows applications to verify users using one-time codes sent via email, SMS, or other messaging channels, eliminating the need for passwords. This approach improves security, simplifies the user experience, and reduces the risk of credential-based attacks.
 
+## **🛠 Key Features**
+
+- **Token Stores:** Choose from in-memory, cookie-based, file, or database storage options.
+- **Flexible Transports:** Send tokens via log output (for testing), SMTP, or custom transports.
+- **One-Time Login Links:** Automatically generate login URLs to simplify the authentication process.
+- **Customizable Expiry:** Set expiration times to control token validity.
+- **Stateless Authentication:** No need to manage sessions or passwords.
+- **Secure by Default:** Supports encrypted token storage and best practices.
+
 ## **🔍 What Problem Does It Solve?**
 
 Managing passwords is challenging and comes with security risks such as:
@@ -10,9 +19,24 @@ Managing passwords is challenging and comes with security risks such as:
 - **User friction:** Users often forget passwords, leading to frequent resets.
 - **Storage concerns:** Securely storing and hashing passwords requires careful implementation.
 
-`go-passwordless` eliminates these concerns by providing a **passwordless authentication flow**. Instead of passwords, users receive a secure one-time code via email, SMS, or other methods to verify their identity.
+`go-passwordless` eliminates these concerns by providing a **passwordless authentication flow**, enabling users to log in with one-time codes or links via email, SMS, or other means.
 
-## **🚀 TL;DR (Quick Start)**
+## **🛠 How It Works**
+
+1. **User Initiates Login:**
+   - The application calls `StartLogin()` with the recipient's email/phone number.
+   - A secure, time-limited token is generated and stored.
+   - The token is sent via a transport method (email, SMS, etc.).
+
+2. **User Clicks Login Link or Enters Code:**
+   - If using codes, the user manually inputs it into the application.
+   - If using links, they click the provided one-time login URL.
+
+3. **Successful Verification:**
+   - If valid, authentication succeeds, and the token is deleted.
+   - If expired or incorrect, authentication fails.
+
+## **🚀 Quick Start**
 
 ### **Installation**
 
@@ -46,16 +70,16 @@ func main() {
  // Create the passwordless manager
  mgr := passwordless.NewManager(memStore, logTransport)
 
- // Start login process
- recipient := "user@example.com"
- tokenID, err := mgr.StartLogin(ctx, recipient)
+ // Generate a one-time login link
+ loginURL, err := mgr.GenerateLoginLink(ctx, "user@example.com", "https://myapp.com/login")
  if err != nil {
-  log.Fatalf("Error starting login: %v", err)
+  log.Fatalf("Error generating login link: %v", err)
  }
- log.Printf("Token ID: %s", tokenID)
 
- // Simulate token verification
- success, err := mgr.VerifyLogin(ctx, tokenID, "123456") // Replace with actual code
+ log.Printf("Your one-time login link: %s", loginURL)
+
+ // Simulate token verification (user submits the token from the URL)
+ success, err := mgr.VerifyLogin(ctx, "token-from-url", "")
  if err != nil {
   log.Fatalf("Error verifying login: %v", err)
  }
@@ -63,66 +87,61 @@ func main() {
  if success {
   log.Println("Login successful!")
  } else {
-  log.Println("Invalid code!")
+  log.Println("Invalid token!")
  }
 }
 ```
 
-## **🛠 How It Works**
+## **🔗 Generating One-Time Login Links**
 
-1. **User Initiates Login:**
-   - The application calls `StartLogin()` with the recipient's email/phone number.
-   - A secure, time-limited token is generated and stored.
-   - The token is sent to the recipient via the configured transport.
+The `GenerateLoginLink()` helper simplifies the process of sending users a one-time login link, allowing them to authenticate by clicking the link.
 
-2. **User Provides Token:**
-   - The user enters the received code in the application.
-   - The application calls `VerifyLogin()` to validate the code.
-
-3. **Successful Verification:**
-   - If valid, the token is marked as used, and authentication is successful.
-   - If expired or incorrect, authentication fails.
-
-## **🛠 Deep Dive into Components**
-
-### **1. Stores (Token Management)**
-
-`go-passwordless` offers various storage options to suit different needs:
-
-| Store Type   | Description                           | Use Case                      |
-|--------------|---------------------------------------|-------------------------------|
-| `MemStore`   | In-memory storage for tokens.         | Development, short-lived apps.|
-| `CookieStore`| Stores tokens in secure cookies.      | Stateless web applications.   |
-| `DbStore`    | SQL-based token persistence.          | Scalable, persistent storage. |
-| `FileStore`  | File-based storage for small apps.    | Local, non-distributed usage. |
-
-### **2. Transports (Token Delivery)**
-
-Transports are responsible for delivering authentication tokens to users:
-
-| Transport Type  | Description                         | Use Case                       |
-|-----------------|------------------------------------|-------------------------------|
-| `LogTransport`  | Logs token to stdout (debug mode). | Development and testing.      |
-| `SMTPTransport` | Sends tokens via email.           | Production authentication.    |
-| `Custom`        | Implement your own delivery method | e.g., SMS, push notifications |
-
-### **3. Manager (Core Logic)**
-
-The `Manager` component handles the entire login and verification lifecycle:
+### **How to Use It:**
 
 ```go
-type Manager struct {
- store     store.TokenStore
- transport transport.Transport
- config    Config
+ctx := context.Background()
+
+mgr := passwordless.NewManager(store.NewMemStore(), &transport.LogTransport{})
+loginURL, err := mgr.GenerateLoginLink(ctx, "user@example.com", "https://myapp.com/login")
+if err != nil {
+    log.Fatalf("Error generating login link: %v", err)
 }
+
+log.Println("Login link:", loginURL)
 ```
 
-- **`StartLogin(ctx, recipient)`** – Generates and sends a token.
-- **`VerifyLogin(ctx, tokenID, code)`** – Verifies the provided token.
-- **`Config`** – Customize code length, expiration, and other settings.
+### **Example Output:**
 
-## **📖 How to Use in Your Project**
+```bash
+Login link: https://myapp.com/login?token=abc123xyz
+```
+
+### **How to Handle the Link in Your Frontend:**
+
+When the user clicks the link, your frontend should extract the `token` parameter and send it to your backend for verification.
+
+Example frontend handler in JavaScript:
+
+```javascript
+const params = new URLSearchParams(window.location.search);
+const token = params.get('token');
+
+fetch('https://api.myapp.com/verify', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+    headers: { 'Content-Type': 'application/json' },
+})
+  .then(response => response.json())
+  .then(data => {
+      if (data.success) {
+          console.log('Login successful!');
+      } else {
+          console.error('Invalid or expired token');
+      }
+  });
+```
+
+## **📖 How to Implement in Your Project**
 
 ### **Step 1: Install the package**
 
@@ -135,14 +154,6 @@ go get github.com/rlnorthcutt/go-passwordless
 Example using `MemStore` and `SMTPTransport`:
 
 ```go
-import (
- "context"
- "github.com/rlnorthcutt/go-passwordless"
- "github.com/rlnorthcutt/go-passwordless/store"
- "github.com/rlnorthcutt/go-passwordless/transport"
-)
-
-// Setup store and transport
 memStore := store.NewMemStore()
 smtpTransport := &transport.SMTPTransport{
     Host: "smtp.example.com",
@@ -151,48 +162,33 @@ smtpTransport := &transport.SMTPTransport{
     Auth: smtp.PlainAuth("", "user", "pass", "smtp.example.com"),
 }
 
-// Initialize manager
 mgr := passwordless.NewManager(memStore, smtpTransport)
-
-// Start login
-tokenID, err := mgr.StartLogin(context.Background(), "user@example.com")
 ```
 
-### **Step 3: Verify Login**
+### **Step 3: Start Login and Verify**
 
 ```go
-success, err := mgr.VerifyLogin(context.Background(), tokenID, "123456")
-if err != nil {
-    log.Fatal("Verification failed:", err)
-}
-if success {
-    log.Println("Login successful")
-}
+tokenID, _ := mgr.StartLogin(context.Background(), "user@example.com")
+success, _ := mgr.VerifyLogin(context.Background(), tokenID, "123456")
 ```
 
 ## **🔗 Dependencies**
 
-`go-passwordless` has minimal dependencies to ensure lightweight, fast performance. Key dependencies include:
+`go-passwordless` has minimal dependencies to ensure lightweight performance:
 
 - `github.com/gorilla/securecookie` (for secure cookie handling).
 - `modernc.org/sqlite` (for database storage in `DbStore`).
 - `net/smtp` (for email transport).
 
-Install dependencies using:
-
-```bash
-go mod tidy
-```
-
 ## **🧪 Running Tests**
 
-Unit tests ensure the correctness of token storage, transport mechanisms, and authentication flows.
+Run tests to ensure the implementation works correctly:
 
 ```bash
 go test -v ./...
 ```
 
-To test with verbose logging for debugging:
+To test specific modules:
 
 ```bash
 go test -v ./store
@@ -201,29 +197,14 @@ go test -v ./transport
 
 ## **📦 Contributing**
 
-We welcome contributions to improve `go-passwordless`. If you’d like to contribute:
+We welcome contributions! If you'd like to contribute:
 
 1. Fork the repository.
 2. Create a feature branch.
 3. Submit a pull request with a detailed description.
 
-Please follow the [contribution guidelines](CONTRIBUTING.md).
-
-## **❓ FAQ**
-
-**Q: Is passwordless authentication secure?**
-A: Yes, when combined with secure transports and short-lived token expiration, it provides a strong authentication method.
-
-**Q: Can I customize token expiration times?**
-A: Yes, using the `Config` struct to set custom expiry durations.
-
-**Q: How do I integrate with SMS providers?**
-A: You can create a custom transport by implementing the `Transport` interface.
+If you have any questions or suggestions, feel free to open an issue on [GitHub](https://github.com/rlnorthcutt/go-passwordless/issues).
 
 ## **📜 License**
 
-`go-passwordless` is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details
-
----
-
-Let us know your thoughts or questions via [GitHub Issues](https://github.com/rlnorthcutt/go-passwordless/issues). Happy coding! 🚀
+`go-passwordless` is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.

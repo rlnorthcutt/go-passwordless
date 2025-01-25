@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/rlnorthcutt/go-passwordless/store"
@@ -51,19 +53,19 @@ func NewManagerWithConfig(s store.TokenStore, t transport.Transport, cfg Config)
 // StartLogin generates a code, stores it, and sends it to the recipient.
 // Returns the generated token ID.
 func (m *Manager) StartLogin(ctx context.Context, recipient string) (string, error) {
-	// 1. Generate code
+	// Generate code
 	code, err := m.generateCode(m.Config.CodeLength, m.Config.CodeCharset)
 	if err != nil {
 		return "", err
 	}
 
-	// 2. Hash it
+	// Hash it
 	hash := sha256.Sum256([]byte(code))
 
-	// 3. Generate a token ID
+	// Generate a token ID
 	tokenID := m.Config.IDGenerator()
 
-	// 4. Build Token
+	// Build Token
 	tok := store.Token{
 		ID:        tokenID,
 		Recipient: recipient,
@@ -72,12 +74,12 @@ func (m *Manager) StartLogin(ctx context.Context, recipient string) (string, err
 		ExpiresAt: time.Now().Add(m.Config.TokenExpiry),
 	}
 
-	// 5. Store the token
+	// Store the token
 	if err := m.Store.Store(ctx, tok); err != nil {
 		return "", err
 	}
 
-	// 6. Send the code to the user
+	// Send the code to the user
 	if err := m.Transport.Send(ctx, recipient, code); err != nil {
 		// If sending fails, remove the token
 		_ = m.Store.Delete(ctx, tokenID)
@@ -94,6 +96,29 @@ func (m *Manager) VerifyLogin(ctx context.Context, tokenID, code string) (bool, 
 		return false, err
 	}
 	return ok, nil
+}
+
+// GenerateLoginLink generates a one-time login link containing a token.
+func (m *Manager) GenerateLoginLink(ctx context.Context, recipient, baseURL string) (string, error) {
+	// Start the login process and get a token ID
+	tokenID, err := m.StartLogin(ctx, recipient)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	// Construct the login URL
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid base URL: %w", err)
+	}
+
+	// Add the token ID as a query parameter
+	query := parsedURL.Query()
+	query.Set("token", tokenID)
+	parsedURL.RawQuery = query.Encode()
+
+	// Return the final URL string
+	return parsedURL.String(), nil
 }
 
 // generateCode produces a random code (numeric or alphanumeric) based on the config.
