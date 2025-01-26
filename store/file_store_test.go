@@ -72,24 +72,32 @@ func TestFileStore(t *testing.T) {
 		t.Fatalf("Expected token ID 'testid', got '%s'", tok.ID)
 	}
 
-	// Step 3: Delete the token
+	// Step 3: Verify the token
+	t.Logf("Verifying token with ID: %s", tokenID)
+	valid, err := fs.Verify(ctx2, tokenID, code)
+	if err != nil {
+		t.Fatalf("Failed to verify token: %v", err)
+	}
+	if !valid {
+		t.Fatal("Expected token verification to succeed, but it failed")
+	}
+	t.Logf("Token ID: %s successfully verified", tokenID)
+
+	// Step 4: Ensure token does not exist after verification (one-time use)
+	t.Logf("Ensuring token does not exist after verification...")
+	_, err = fs.Exists(ctx2, tokenID)
+	if err == nil {
+		t.Fatal("Expected token to be deleted after verification, but it still exists")
+	}
+	t.Logf("Token ID: %s correctly deleted after verification", tokenID)
+
+	// Step 5: Delete the token manually (should gracefully handle non-existing token)
 	t.Logf("Deleting token with ID: %s", tokenID)
-	err = fs.Delete(ctx2, "testid")
+	err = fs.Delete(ctx2, tokenID)
 	if err != nil {
 		t.Fatalf("Failed to delete token: %v", err)
 	}
-	t.Logf("Token ID: %s successfully deleted", tokenID)
-
-	// Step 4: Ensure token does not exist after deletion
-	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
-	w3 := httptest.NewRecorder()
-	ctx3 := store.WithRequestResponse(context.Background(), req3, w3)
-
-	_, err = fs.Exists(ctx3, "testid")
-	if err == nil {
-		t.Fatal("Expected token to be deleted but it still exists")
-	}
-	t.Logf("Token ID: %s correctly does not exist after deletion", tokenID)
+	t.Logf("Token ID: %s successfully deleted (or already deleted)", tokenID)
 
 	t.Logf("TestFileStore completed successfully")
 }

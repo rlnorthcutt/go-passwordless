@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"time"
@@ -97,6 +99,47 @@ func (cs *CookieStore) Exists(ctx context.Context, tokenID string) (*Token, erro
 		CodeHash:  session.Values["codeHash"].([]byte),
 		ExpiresAt: time.Unix(expiresAtUnix, 0),
 	}, nil
+}
+
+// Verify checks if the provided code matches the stored token's hash.
+func (cs *CookieStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
+	req, rsp := getRequestResponse(ctx)
+	if req == nil || rsp == nil {
+		return false, errors.New("missing request or response in context")
+	}
+
+	session, err := cs.store.Get(req, cs.CookieName)
+	if err != nil {
+		return false, err
+	}
+
+	storedTokenID, ok := session.Values["tokenID"].(string)
+	if !ok || storedTokenID != tokenID {
+		return false, errors.New("token not found")
+	}
+
+	expiresAtUnix, ok := session.Values["expiresAt"].(int64)
+	if !ok || time.Now().After(time.Unix(expiresAtUnix, 0)) {
+		return false, errors.New("token expired")
+	}
+
+	storedHash, ok := session.Values["codeHash"].([]byte)
+	if !ok {
+		return false, errors.New("invalid token data")
+	}
+
+	// Hash the provided code and compare it with stored hash
+	codeHash := sha256.Sum256([]byte(code))
+	if !bytes.Equal(storedHash, codeHash[:]) {
+		return false, nil
+	}
+
+	// Token is verified; remove it for one-time use.
+	if err := cs.Delete(ctx, tokenID); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // Delete removes the session token from the store.

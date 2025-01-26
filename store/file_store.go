@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"os"
 	"time"
@@ -88,6 +90,28 @@ func (fs *FileStore) Exists(ctx context.Context, tokenID string) (*Token, error)
 	}, nil
 }
 
+// Verify checks if the provided code matches the stored token's hash.
+func (fs *FileStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
+	tok, err := fs.Exists(ctx, tokenID)
+	if err != nil {
+		return false, err
+	}
+
+	// Hash the provided code and compare with stored hash
+	codeHash := sha256.Sum256([]byte(code))
+	if !bytes.Equal(tok.CodeHash, codeHash[:]) {
+		return false, nil
+	}
+
+	// Delete token after successful verification (one-time use)
+	err = fs.Delete(ctx, tokenID)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 // Delete removes the session token from the store.
 func (fs *FileStore) Delete(ctx context.Context, tokenID string) error {
 	req, rsp := getRequestResponse(ctx)
@@ -101,5 +125,6 @@ func (fs *FileStore) Delete(ctx context.Context, tokenID string) error {
 	}
 
 	session.Options.MaxAge = -1 // Invalidate the session immediately
+	session.Values = make(map[interface{}]interface{})
 	return session.Save(req, rsp)
 }
