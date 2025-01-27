@@ -12,6 +12,7 @@ type Token struct {
 	CodeHash  []byte
 	ExpiresAt time.Time
 	CreatedAt time.Time
+	Attempts  int // Track number of failed attempts
 }
 
 // TokenStore defines how tokens are saved, retrieved, verified, and deleted.

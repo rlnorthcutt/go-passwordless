@@ -27,15 +27,19 @@ type Config struct {
 	// For example, "0123456789" for numeric codes
 	// or "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" for alphanumeric codes.
 	CodeCharset string
+
+	// MaxFailedAttempts is the maximum number of failed attempts allowed before the token is invalidated.
+	MaxFailedAttempts int
 }
 
 // DefaultConfig provides sensible defaults for a typical passwordless flow.
 func DefaultConfig() Config {
 	return Config{
-		CodeLength:  6,
-		TokenExpiry: 15 * time.Minute,
-		IDGenerator: defaultIDGenerator,
-		CodeCharset: "0123456789", // numeric-only
+		CodeLength:        6,
+		TokenExpiry:       15 * time.Minute,
+		IDGenerator:       defaultIDGenerator,
+		CodeCharset:       "0123456789", // numeric-only
+		MaxFailedAttempts: 3,
 	}
 }
 

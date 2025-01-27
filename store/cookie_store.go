@@ -26,13 +26,6 @@ func WithRequestResponse(ctx context.Context, r *http.Request, w http.ResponseWr
 	return ctx
 }
 
-// getRequestResponse extracts the http.Request and http.ResponseWriter from the context.
-func getRequestResponse(ctx context.Context) (*http.Request, http.ResponseWriter) {
-	req, _ := ctx.Value(ctxKeyRequest).(*http.Request)
-	rsp, _ := ctx.Value(ctxKeyResponse).(http.ResponseWriter)
-	return req, rsp
-}
-
 // CookieStore manages passwordless tokens using Gorilla Sessions.
 type CookieStore struct {
 	store         *sessions.CookieStore
@@ -51,111 +44,64 @@ func NewCookieStore(secretKey []byte) *CookieStore {
 
 // Store saves the token in the session.
 func (cs *CookieStore) Store(ctx context.Context, tok Token) error {
-	req, rsp := getRequestResponse(ctx)
-	if req == nil || rsp == nil {
-		return errors.New("missing request or response in context")
+	req, rsp, err := getContextRequestResponse(ctx)
+	if err != nil {
+		return err
 	}
 
 	session, _ := cs.store.Get(req, cs.CookieName)
-	session.Values["tokenID"] = tok.ID
-	session.Values["recipient"] = tok.Recipient
-	session.Values["codeHash"] = tok.CodeHash
-	session.Values["expiresAt"] = tok.ExpiresAt.Unix()
+	setSessionValues(session, tok)
 
 	session.Options = &sessions.Options{
 		Path:     "/",
 		MaxAge:   int(cs.DefaultExpiry.Seconds()),
 		HttpOnly: true,
-		Secure:   true, // Set to false if testing locally without HTTPS
+		Secure:   true,
 	}
 
 	return session.Save(req, rsp)
 }
 
-// Exists checks if a token exists in the session.
+// Exists checks if a token exists in the session and removes it if expired.
 func (cs *CookieStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
-	req, _ := getRequestResponse(ctx)
-	if req == nil {
-		return nil, errors.New("missing request in context")
-	}
-
-	session, err := cs.store.Get(req, cs.CookieName)
+	req, _, err := getContextRequestResponse(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if session.Values["tokenID"] != tokenID {
-		return nil, errors.New("token not found")
+	session, err := cs.store.Get(req, cs.CookieName)
+	if err != nil {
+		return nil, errors.New("failed to retrieve session")
 	}
 
-	expiresAtUnix, ok := session.Values["expiresAt"].(int64)
-	if !ok || time.Now().After(time.Unix(expiresAtUnix, 0)) {
-		return nil, errors.New("token expired")
+	tok, err := getSessionToken(session, tokenID)
+	if err != nil {
+		// Token not found or expired
+		return nil, cs.Delete(ctx, tokenID)
 	}
-
-	return &Token{
-		ID:        session.Values["tokenID"].(string),
-		Recipient: session.Values["recipient"].(string),
-		CodeHash:  session.Values["codeHash"].([]byte),
-		ExpiresAt: time.Unix(expiresAtUnix, 0),
-	}, nil
+	return tok, nil
 }
 
 // Verify checks if the provided code matches the stored token's hash.
 func (cs *CookieStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
-	req, rsp := getRequestResponse(ctx)
-	if req == nil || rsp == nil {
-		return false, errors.New("missing request or response in context")
-	}
-
-	session, err := cs.store.Get(req, cs.CookieName)
+	tok, err := cs.Exists(ctx, tokenID)
 	if err != nil {
 		return false, err
 	}
 
-	storedTokenID, ok := session.Values["tokenID"].(string)
-	if !ok || storedTokenID != tokenID {
-		return false, errors.New("token not found")
-	}
-
-	expiresAtUnix, ok := session.Values["expiresAt"].(int64)
-	if !ok || time.Now().After(time.Unix(expiresAtUnix, 0)) {
-		return false, errors.New("token expired")
-	}
-
-	storedHash, ok := session.Values["codeHash"].([]byte)
-	if !ok {
-		return false, errors.New("invalid token data")
-	}
-
-	// Hash the provided code and compare it with stored hash
+	// Hash the provided code and compare with stored hash
 	codeHash := sha256.Sum256([]byte(code))
-	if !bytes.Equal(storedHash, codeHash[:]) {
-		return false, nil
+	if !bytes.Equal(tok.CodeHash, codeHash[:]) {
+		tok.Attempts++
+		_ = cs.Store(ctx, *tok) // Save attempts count
+		return false, errors.New("invalid code")
 	}
 
 	// Token is verified; remove it for one-time use.
-	if err := cs.Delete(ctx, tokenID); err != nil {
-		return false, err
-	}
-
-	return true, nil
+	return true, cs.Delete(ctx, tokenID)
 }
 
 // Delete removes the session token from the store.
 func (cs *CookieStore) Delete(ctx context.Context, tokenID string) error {
-	req, rsp := getRequestResponse(ctx)
-	if req == nil || rsp == nil {
-		return errors.New("missing request or response in context")
-	}
-
-	session, _ := cs.store.Get(req, cs.CookieName)
-	if session.Values["tokenID"] != tokenID {
-		return nil // If the token doesn't exist, no need to proceed.
-	}
-
-	// Set MaxAge to -1 to delete the session immediately.
-	session.Options.MaxAge = -1 // Invalidate the session immediately.
-	session.Values = make(map[interface{}]interface{})
-	return session.Save(req, rsp)
+	return deleteSession(ctx, cs.store, cs.CookieName, tokenID)
 }

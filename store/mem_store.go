@@ -47,6 +47,12 @@ func (m *MemStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
 	if !ok {
 		return nil, fmt.Errorf("token not found")
 	}
+
+	if time.Now().After(tok.ExpiresAt) {
+		delete(m.tokens, tokenID)
+		return nil, fmt.Errorf("token expired")
+	}
+
 	return &tok, nil
 }
 

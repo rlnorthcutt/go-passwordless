@@ -1,11 +1,12 @@
 package passwordless
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
-	"net/url"
+	"log"
 	"time"
 
 	"github.com/rlnorthcutt/go-passwordless/store"
@@ -13,9 +14,10 @@ import (
 )
 
 type Manager struct {
-	Store     store.TokenStore
-	Transport transport.Transport
-	Config    Config
+	Store             store.TokenStore
+	Transport         transport.Transport
+	Config            Config
+	MaxFailedAttempts int
 }
 
 // NewManager constructs a Manager using the default config (see config.go).
@@ -42,11 +44,15 @@ func NewManagerWithConfig(s store.TokenStore, t transport.Transport, cfg Config)
 	if cfg.CodeCharset == "" {
 		cfg.CodeCharset = "0123456789"
 	}
+	if cfg.MaxFailedAttempts == 0 {
+		cfg.MaxFailedAttempts = 3
+	}
 
 	return &Manager{
-		Store:     s,
-		Transport: t,
-		Config:    cfg,
+		Store:             s,
+		Transport:         t,
+		Config:            cfg,
+		MaxFailedAttempts: cfg.MaxFailedAttempts,
 	}
 }
 
@@ -91,34 +97,34 @@ func (m *Manager) StartLogin(ctx context.Context, recipient string) (string, err
 
 // VerifyLogin checks the user-provided code against the stored token.
 func (m *Manager) VerifyLogin(ctx context.Context, tokenID, code string) (bool, error) {
-	ok, err := m.Store.Verify(ctx, tokenID, code)
+	tok, err := m.Store.Exists(ctx, tokenID)
 	if err != nil {
-		return false, err
-	}
-	return ok, nil
-}
-
-// GenerateLoginLink generates a one-time login link containing a token.
-func (m *Manager) GenerateLoginLink(ctx context.Context, recipient, baseURL string) (string, error) {
-	// Start the login process and get a token ID
-	tokenID, err := m.StartLogin(ctx, recipient)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate token: %w", err)
+		return false, fmt.Errorf("token not found")
 	}
 
-	// Construct the login URL
-	parsedURL, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("invalid base URL: %w", err)
+	// Check expiration time
+	if time.Now().After(tok.ExpiresAt) {
+		_ = m.Store.Delete(ctx, tokenID)
+		return false, fmt.Errorf("token expired")
 	}
 
-	// Add the token ID as a query parameter
-	query := parsedURL.Query()
-	query.Set("token", tokenID)
-	parsedURL.RawQuery = query.Encode()
+	// Hash and compare the provided code
+	codeHash := sha256.Sum256([]byte(code))
+	if !bytes.Equal(tok.CodeHash, codeHash[:]) {
+		tok.Attempts++
+		if tok.Attempts >= m.Config.MaxFailedAttempts {
+			_ = m.Store.Delete(ctx, tokenID)
+			return false, fmt.Errorf("too many failed attempts, token deleted")
+		}
+		// Store updated attempt count
+		_ = m.Store.Store(ctx, *tok)
+		log.Printf("invalid code, attempts remaining: %d", m.Config.MaxFailedAttempts-tok.Attempts)
+		return false, fmt.Errorf("invalid code")
+	}
 
-	// Return the final URL string
-	return parsedURL.String(), nil
+	// If verification succeeds, delete token (one-time use)
+	_ = m.Store.Delete(ctx, tokenID)
+	return true, nil
 }
 
 // generateCode produces a random code (numeric or alphanumeric) based on the config.

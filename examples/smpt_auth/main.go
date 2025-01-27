@@ -2,20 +2,35 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/smtp"
 	"os"
+	"time"
 
 	"github.com/rlnorthcutt/go-passwordless"
+	"github.com/rlnorthcutt/go-passwordless/mocksmtp"
 	"github.com/rlnorthcutt/go-passwordless/store"
 	"github.com/rlnorthcutt/go-passwordless/transport"
 )
 
 func main() {
-	ctx := context.Background()
+	// Start the mock SMTP server if using local testing
+	// `USE_MOCK_SMTP=true go run examples/smtp_auth/main.go`
+	if os.Getenv("USE_MOCK_SMTP") == "true" {
+		go mocksmtp.StartMockSMTPServer("2525")
+		time.Sleep(1 * time.Second) // Allow server to start
+	}
 
-	// Load SMTP credentials from environment variables
+	// Use the mock server by default if no real credentials are set
 	smtpHost := os.Getenv("SMTP_HOST")
+	if smtpHost == "" {
+		smtpHost = "localhost"
+	}
 	smtpPort := os.Getenv("SMTP_PORT")
+	if smtpPort == "" {
+		smtpPort = "2525" // Default to mock SMTP server port
+	}
 	smtpUser := os.Getenv("SMTP_USER")
 	smtpPassword := os.Getenv("SMTP_PASSWORD")
 
@@ -23,27 +38,21 @@ func main() {
 		Host: smtpHost,
 		Port: smtpPort,
 		From: smtpUser,
-		Auth: transport.NewSMTPAuth(smtpUser, smtpPassword, smtpHost),
+		Auth: smtp.PlainAuth("", smtpUser, smtpPassword, smtpHost),
 	}
 
 	mgr := passwordless.NewManager(store.NewMemStore(), smtpTransport)
 
 	email := "user@example.com"
-	tokenID, err := mgr.StartLogin(ctx, email)
+	loginURL, err := mgr.GenerateLoginLink(context.Background(), email, "https://myapp.com/login")
 	if err != nil {
-		log.Fatalf("Failed to start login: %v", err)
+		log.Fatalf("Failed to generate login link: %v", err)
 	}
 
-	log.Println("A login code has been sent to:", email)
-
-	// Simulate verification (in a real app, get the code from email)
-	success, err := mgr.VerifyLogin(ctx, tokenID, "123456")
+	err = smtpTransport.Send(context.Background(), email, fmt.Sprintf("Click the link to login: %s", loginURL))
 	if err != nil {
-		log.Fatalf("Verification failed: %v", err)
+		log.Fatalf("Failed to send login email: %v", err)
 	}
-	if success {
-		log.Println("Login successful!")
-	} else {
-		log.Println("Invalid code.")
-	}
+
+	log.Println("A login link has been sent to:", email)
 }

@@ -2,22 +2,24 @@ package transport_test
 
 import (
 	"context"
-	"net/smtp"
 	"testing"
 	"time"
 
+	"github.com/rlnorthcutt/go-passwordless/mocksmtp"
 	"github.com/rlnorthcutt/go-passwordless/transport"
 )
 
 func TestSMTPTransport_Send(t *testing.T) {
 	t.Logf("[DEBUG] Starting TestSMTPTransport_Send...")
 
-	// Step 1: Setup the SMTP transport (use a local test server like MailHog for testing)
+	// Step 1: Start mock SMTP server on port 2525
+	go mocksmtp.StartMockSMTPServer("2525")
+	time.Sleep(1 * time.Second) // Give the server time to start
+
 	tr := &transport.SMTPTransport{
 		Host: "localhost",
-		Port: "1025", // Assumes a test SMTP server is running (e.g., MailHog)
-		From: "noreply@example.com",
-		Auth: smtp.PlainAuth("", "user", "pass", "localhost"),
+		Port: "2525",
+		From: "test@example.com",
 	}
 
 	t.Logf("[DEBUG] SMTP Transport configured: host=%s, port=%s, from=%s", tr.Host, tr.Port, tr.From)

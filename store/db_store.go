@@ -24,25 +24,26 @@ func NewDbStore(db *sql.DB, tableName string) *DbStore {
 }
 
 func (s *DbStore) Store(ctx context.Context, tok Token) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, recipient, code_hash, expires_at, created_at)
-                          VALUES (?, ?, ?, ?, ?)`, s.TableName)
+	query := fmt.Sprintf(`INSERT INTO %s (id, recipient, code_hash, expires_at, created_at, attempts)
+                          VALUES (?, ?, ?, ?, ?, ?)`, s.TableName)
 	_, err := s.DB.ExecContext(ctx, query,
 		tok.ID,
 		tok.Recipient,
 		tok.CodeHash,
 		tok.ExpiresAt,
 		tok.CreatedAt,
+		tok.Attempts,
 	)
 	return err
 }
 
 func (s *DbStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
-	query := fmt.Sprintf(`SELECT id, recipient, code_hash, expires_at, created_at
+	query := fmt.Sprintf(`SELECT id, recipient, code_hash, expires_at, created_at, attempts
                           FROM %s WHERE id = ?`, s.TableName)
 	row := s.DB.QueryRowContext(ctx, query, tokenID)
 
 	var tok Token
-	err := row.Scan(&tok.ID, &tok.Recipient, &tok.CodeHash, &tok.ExpiresAt, &tok.CreatedAt)
+	err := row.Scan(&tok.ID, &tok.Recipient, &tok.CodeHash, &tok.ExpiresAt, &tok.CreatedAt, &tok.Attempts)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("token not found")

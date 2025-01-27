@@ -27,11 +27,6 @@ func TestFileStore(t *testing.T) {
 
 	fs := store.NewFileStore(filePath, secretKey)
 
-	// Step 1: Store a token
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	ctx := store.WithRequestResponse(context.Background(), req, w)
-
 	tokenID := "testid"
 	code := "securecode"
 	codeHash := sha256.Sum256([]byte(code))
@@ -43,61 +38,81 @@ func TestFileStore(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	err := fs.Store(ctx, testToken)
-	if err != nil {
-		t.Fatalf("Failed to store session: %v", err)
-	}
-	t.Logf("Stored token with ID: %s", testToken.ID)
+	var cookies []*http.Cookie
 
-	cookies := w.Result().Cookies()
-	if len(cookies) == 0 {
-		t.Fatal("Expected cookie to be set, but none found")
-	}
-	t.Logf("Stored Cookie: %+v", cookies[0])
+	t.Run("StoreToken", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		w := httptest.NewRecorder()
+		ctx := store.WithRequestResponse(context.Background(), req, w)
 
-	// Step 2: Retrieve token using the stored cookie
-	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req2.AddCookie(cookies[0])
-	w2 := httptest.NewRecorder()
-	ctx2 := store.WithRequestResponse(context.Background(), req2, w2)
+		err := fs.Store(ctx, testToken)
+		if err != nil {
+			t.Fatalf("Failed to store token: %v", err)
+		}
 
-	t.Logf("Retrieving token with ID: %s", tokenID)
-	tok, err := fs.Exists(ctx2, "testid")
-	if err != nil {
-		t.Fatalf("Failed to retrieve token: %v", err)
-	}
-	t.Logf("Retrieved token ID: %s, Recipient: %s", tok.ID, tok.Recipient)
+		cookies = w.Result().Cookies()
+		if len(cookies) == 0 {
+			t.Fatal("Expected cookie to be set, but none found")
+		}
+		t.Logf("Stored Cookie: %+v", cookies[0])
+	})
 
-	if tok.ID != "testid" {
-		t.Fatalf("Expected token ID 'testid', got '%s'", tok.ID)
-	}
+	t.Run("RetrieveToken", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.AddCookie(cookies[0])
+		w := httptest.NewRecorder()
+		ctx := store.WithRequestResponse(context.Background(), req, w)
 
-	// Step 3: Verify the token
-	t.Logf("Verifying token with ID: %s", tokenID)
-	valid, err := fs.Verify(ctx2, tokenID, code)
-	if err != nil {
-		t.Fatalf("Failed to verify token: %v", err)
-	}
-	if !valid {
-		t.Fatal("Expected token verification to succeed, but it failed")
-	}
-	t.Logf("Token ID: %s successfully verified", tokenID)
+		tok, err := fs.Exists(ctx, tokenID)
+		if err != nil {
+			t.Fatalf("Failed to retrieve token: %v", err)
+		}
+		t.Logf("Retrieved token ID: %s, Recipient: %s", tok.ID, tok.Recipient)
 
-	// Step 4: Ensure token does not exist after verification (one-time use)
-	t.Logf("Ensuring token does not exist after verification...")
-	_, err = fs.Exists(ctx2, tokenID)
-	if err == nil {
-		t.Fatal("Expected token to be deleted after verification, but it still exists")
-	}
-	t.Logf("Token ID: %s correctly deleted after verification", tokenID)
+		if tok.ID != tokenID {
+			t.Fatalf("Expected token ID '%s', got '%s'", tokenID, tok.ID)
+		}
+	})
 
-	// Step 5: Delete the token manually (should gracefully handle non-existing token)
-	t.Logf("Deleting token with ID: %s", tokenID)
-	err = fs.Delete(ctx2, tokenID)
-	if err != nil {
-		t.Fatalf("Failed to delete token: %v", err)
-	}
-	t.Logf("Token ID: %s successfully deleted (or already deleted)", tokenID)
+	t.Run("VerifyToken", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.AddCookie(cookies[0])
+		w := httptest.NewRecorder()
+		ctx := store.WithRequestResponse(context.Background(), req, w)
+
+		valid, err := fs.Verify(ctx, tokenID, code)
+		if err != nil {
+			t.Fatalf("Failed to verify token: %v", err)
+		}
+		if !valid {
+			t.Fatal("Expected token verification to succeed, but it failed")
+		}
+		t.Logf("Token ID: %s successfully verified", tokenID)
+	})
+
+	t.Run("VerifyDeletionAfterUse", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		w := httptest.NewRecorder()
+		ctx := store.WithRequestResponse(context.Background(), req, w)
+
+		token, _ := fs.Exists(ctx, tokenID)
+		if token != nil {
+			t.Fatal("Expected token to be deleted after verification, but it still exists")
+		}
+		t.Logf("Token ID: %s correctly deleted after verification", tokenID)
+	})
+
+	t.Run("DeleteTokenManually", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		w := httptest.NewRecorder()
+		ctx := store.WithRequestResponse(context.Background(), req, w)
+
+		err := fs.Delete(ctx, tokenID)
+		if err != nil {
+			t.Fatalf("Failed to delete token: %v", err)
+		}
+		t.Logf("Token ID: %s successfully deleted (or already deleted)", tokenID)
+	})
 
 	t.Logf("TestFileStore completed successfully")
 }

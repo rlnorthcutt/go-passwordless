@@ -39,55 +39,42 @@ func NewFileStore(path string, secretKey []byte) *FileStore {
 
 // Store saves the token in the session.
 func (fs *FileStore) Store(ctx context.Context, tok Token) error {
-	req, rsp := getRequestResponse(ctx)
-	if req == nil || rsp == nil {
-		return errors.New("missing request or response in context")
+	req, rsp, err := getContextRequestResponse(ctx)
+	if err != nil {
+		return err
 	}
 
 	session, _ := fs.store.Get(req, fs.CookieName)
-	session.Values["tokenID"] = tok.ID
-	session.Values["recipient"] = tok.Recipient
-	session.Values["codeHash"] = tok.CodeHash
-	session.Values["expiresAt"] = tok.ExpiresAt.Unix()
+	setSessionValues(session, tok)
 
 	session.Options = &sessions.Options{
 		Path:     "/",
 		MaxAge:   int(fs.DefaultExpiry.Seconds()),
 		HttpOnly: true,
-		Secure:   true, // Set to false if testing locally without HTTPS
+		Secure:   true,
 	}
 
 	return session.Save(req, rsp)
 }
 
-// Exists checks if a token exists in the session.
+// Exists checks if a token exists and removes it if expired.
 func (fs *FileStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
-	req, _ := getRequestResponse(ctx)
-	if req == nil {
-		return nil, errors.New("missing request in context")
-	}
-
-	session, err := fs.store.Get(req, fs.CookieName)
+	req, _, err := getContextRequestResponse(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	sessionTokenID, ok := session.Values["tokenID"].(string)
-	if !ok || sessionTokenID != tokenID {
-		return nil, errors.New("token not found")
+	session, err := fs.store.Get(req, fs.CookieName)
+	if err != nil {
+		return nil, errors.New("failed to retrieve session")
 	}
 
-	expiresAtUnix, _ := session.Values["expiresAt"].(int64)
-	if time.Now().After(time.Unix(expiresAtUnix, 0)) {
-		return nil, errors.New("token expired")
+	tok, err := getSessionToken(session, tokenID)
+	if err != nil {
+		// Token not found or expired
+		return nil, fs.Delete(ctx, tokenID)
 	}
-
-	return &Token{
-		ID:        sessionTokenID,
-		Recipient: session.Values["recipient"].(string),
-		CodeHash:  session.Values["codeHash"].([]byte),
-		ExpiresAt: time.Unix(expiresAtUnix, 0),
-	}, nil
+	return tok, nil
 }
 
 // Verify checks if the provided code matches the stored token's hash.
@@ -100,31 +87,16 @@ func (fs *FileStore) Verify(ctx context.Context, tokenID, code string) (bool, er
 	// Hash the provided code and compare with stored hash
 	codeHash := sha256.Sum256([]byte(code))
 	if !bytes.Equal(tok.CodeHash, codeHash[:]) {
-		return false, nil
+		tok.Attempts++
+		_ = fs.Store(ctx, *tok) // Save attempts count
+		return false, errors.New("invalid code")
 	}
 
 	// Delete token after successful verification (one-time use)
-	err = fs.Delete(ctx, tokenID)
-	if err != nil {
-		return false, err
-	}
-
-	return true, nil
+	return true, fs.Delete(ctx, tokenID)
 }
 
 // Delete removes the session token from the store.
 func (fs *FileStore) Delete(ctx context.Context, tokenID string) error {
-	req, rsp := getRequestResponse(ctx)
-	if req == nil || rsp == nil {
-		return errors.New("missing request or response in context")
-	}
-
-	session, _ := fs.store.Get(req, fs.CookieName)
-	if session.Values["tokenID"] != tokenID {
-		return nil // No need to delete if the token isn't found
-	}
-
-	session.Options.MaxAge = -1 // Invalidate the session immediately
-	session.Values = make(map[interface{}]interface{})
-	return session.Save(req, rsp)
+	return deleteSession(ctx, fs.store, fs.CookieName, tokenID)
 }

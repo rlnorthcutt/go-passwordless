@@ -7,7 +7,7 @@
 - **Token Stores:** Choose from in-memory, cookie-based, file, or database storage options.
 - **Flexible Transports:** Send tokens via log output (for testing), SMTP, or custom transports.
 - **One-Time Login Links:** Automatically generate login URLs to simplify the authentication process.
-- **Customizable Expiry:** Set expiration times to control token validity.
+- **Customizable Expiry & Attempts**: Control token validity with expiration time _(default: 15 minutes)_ and set a maximum number of allowed verification attempts _(default: 3)_.
 - **Stateless Authentication:** No need to manage sessions or passwords.
 - **Secure by Default:** Supports encrypted token storage and best practices.
 

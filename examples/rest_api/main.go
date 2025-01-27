@@ -69,6 +69,7 @@ func verifyLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if success {
+		log.Printf("Verification successful for token ID: %s", tokenID)
 		fmt.Fprintln(w, "Verification successful! You are now logged in.")
 	} else {
 		fmt.Fprintln(w, "Verification failed! Invalid code.")
