@@ -1,7 +1,9 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"time"
 )
 
@@ -30,4 +32,16 @@ type TokenStore interface {
 
 	// Delete permanently removes a token by ID (e.g. after verification).
 	Delete(ctx context.Context, tokenID string) error
+}
+
+// Checks whether a given token is expired.
+func IsTokenExpired(tok *Token) bool {
+	return time.Now().After(tok.ExpiresAt)
+}
+
+// Verifies the provided code against the stored token's hash.
+func VerifyToken(tok *Token, code string) bool {
+	codeHash := sha256.Sum256([]byte(code))
+	// Securely compares two hashes using constant-time comparison.
+	return bytes.Equal(codeHash[:], tok.CodeHash)
 }

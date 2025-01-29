@@ -10,10 +10,6 @@ import (
 	"github.com/rlnorthcutt/go-passwordless/store"
 )
 
-// These helpers support both the file and cookie stores because they both
-// use the Gorilla sessions package. This primarily provides the securecookie
-// implementation for the cookie store, with the file store for testing.
-
 // getContextRequestResponse extracts request and response from context with error handling.
 func getContextRequestResponse(ctx context.Context) (*http.Request, http.ResponseWriter, error) {
 	req, reqOk := ctx.Value(ctxKeyRequest).(*http.Request)
@@ -40,16 +36,14 @@ func getSessionToken(session *sessions.Session, tokenID string) (*store.Token, e
 		return nil, errors.New("token not found")
 	}
 
-	// Check for token expiration
 	expiresAtUnix, ok := session.Values["expiresAt"].(int64)
 	if !ok {
 		return nil, errors.New("invalid session expiration")
 	}
-	if time.Now().After(time.Unix(expiresAtUnix, 0)) {
+	if time.Now().After(time.Unix(expiresAtUnix, 0)) { // Using the generic store method
 		return nil, errors.New("token expired")
 	}
 
-	// Return token if valid
 	return &store.Token{
 		ID:        session.Values["tokenID"].(string),
 		Recipient: session.Values["recipient"].(string),
@@ -75,5 +69,6 @@ func deleteSession(ctx context.Context, store sessions.Store, cookieName, tokenI
 	session.Options.MaxAge = -1 // Invalidate the session immediately.
 	session.Values = make(map[interface{}]interface{})
 
-	return session.Save(req, rsp)
+	err = session.Save(req, rsp)
+	return err
 }

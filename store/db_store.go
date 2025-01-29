@@ -1,21 +1,19 @@
-// file: store/db_store.go
 package store
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 )
 
+// DbStore represents a database-backed token store.
 type DbStore struct {
-	DB        *sql.DB
-	TableName string
+	DB        *sql.DB // Reference to the database connection
+	TableName string  // Name of the table used to store tokens
 }
 
-// NewDbStore constructs a DbStore with a reference to *sql.DB and a table name
+// NewDbStore initializes a new DbStore with a reference to *sql.DB and a table name.
 func NewDbStore(db *sql.DB, tableName string) *DbStore {
 	return &DbStore{
 		DB:        db,
@@ -23,9 +21,12 @@ func NewDbStore(db *sql.DB, tableName string) *DbStore {
 	}
 }
 
+// Store saves a new token in the database.
 func (s *DbStore) Store(ctx context.Context, tok Token) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, recipient, code_hash, expires_at, created_at, attempts)
-                          VALUES (?, ?, ?, ?, ?, ?)`, s.TableName)
+	query := fmt.Sprintf(`
+		INSERT INTO %s (id, recipient, code_hash, expires_at, created_at, attempts)
+		VALUES (?, ?, ?, ?, ?, ?)`, s.TableName)
+
 	_, err := s.DB.ExecContext(ctx, query,
 		tok.ID,
 		tok.Recipient,
@@ -34,54 +35,68 @@ func (s *DbStore) Store(ctx context.Context, tok Token) error {
 		tok.CreatedAt,
 		tok.Attempts,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to store token: %w", err)
+	}
+	return nil
 }
 
+// Exists checks if a token exists in the database and returns it.
+// If the token is expired, it is deleted automatically.
 func (s *DbStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
-	query := fmt.Sprintf(`SELECT id, recipient, code_hash, expires_at, created_at, attempts
-                          FROM %s WHERE id = ?`, s.TableName)
-	row := s.DB.QueryRowContext(ctx, query, tokenID)
+	query := fmt.Sprintf(`
+		SELECT id, recipient, code_hash, expires_at, created_at, attempts
+		FROM %s WHERE id = ?`, s.TableName)
 
 	var tok Token
-	err := row.Scan(&tok.ID, &tok.Recipient, &tok.CodeHash, &tok.ExpiresAt, &tok.CreatedAt, &tok.Attempts)
+	err := s.DB.QueryRowContext(ctx, query, tokenID).Scan(
+		&tok.ID,
+		&tok.Recipient,
+		&tok.CodeHash,
+		&tok.ExpiresAt,
+		&tok.CreatedAt,
+		&tok.Attempts,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("token not found")
 		}
-		return nil, err
+		return nil, fmt.Errorf("database error: %w", err)
 	}
+
+	// Check if the token has expired and delete it
+	if IsTokenExpired(&tok) {
+		_ = s.Delete(ctx, tokenID) // Purge expired token
+		return nil, fmt.Errorf("token expired and was deleted")
+	}
+
 	return &tok, nil
 }
 
+// Verify checks whether the provided code matches the stored hash.
 func (s *DbStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
 	tok, err := s.Exists(ctx, tokenID)
 	if err != nil {
-		// If not found or DB error, bail out
-		return false, err
+		return false, err // Token not found or expired
 	}
 
-	// Check expiry
-	if time.Now().After(tok.ExpiresAt) {
-		// If expired, delete it
-		_ = s.Delete(ctx, tokenID)
-		return false, fmt.Errorf("token expired")
+	if !VerifyToken(tok, code) {
+		return false, fmt.Errorf("invalid code")
 	}
 
-	// Compare hash
-	codeHash := sha256.Sum256([]byte(code))
-	if string(codeHash[:]) != string(tok.CodeHash) {
-		return false, nil
-	}
-
-	// If match, consume it by deleting
+	// If verification succeeds, delete token (one-time use)
 	if err := s.Delete(ctx, tokenID); err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to delete token after verification: %w", err)
 	}
 	return true, nil
 }
 
+// Delete removes a token from the database.
 func (s *DbStore) Delete(ctx context.Context, tokenID string) error {
 	query := fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, s.TableName)
 	_, err := s.DB.ExecContext(ctx, query, tokenID)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to delete token: %w", err)
+	}
+	return nil
 }

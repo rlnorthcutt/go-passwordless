@@ -1,9 +1,7 @@
 package session
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"net/http"
 	"time"
@@ -90,9 +88,8 @@ func (cs *CookieStore) Verify(ctx context.Context, tokenID, code string) (bool, 
 		return false, err
 	}
 
-	// Hash the provided code and compare with stored hash
-	codeHash := sha256.Sum256([]byte(code))
-	if !bytes.Equal(tok.CodeHash, codeHash[:]) {
+	// Verify the code
+	if !store.VerifyToken(tok, code) {
 		tok.Attempts++
 		_ = cs.Store(ctx, *tok) // Save attempts count
 		return false, errors.New("invalid code")
