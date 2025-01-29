@@ -1,4 +1,4 @@
-package store
+package session
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/sessions"
+	"github.com/rlnorthcutt/go-passwordless/store"
 )
 
 // These helpers support both the file and cookie stores because they both
@@ -24,7 +25,7 @@ func getContextRequestResponse(ctx context.Context) (*http.Request, http.Respons
 }
 
 // setSessionValues is a helper to store common session data.
-func setSessionValues(session *sessions.Session, tok Token) {
+func setSessionValues(session *sessions.Session, tok store.Token) {
 	session.Values["tokenID"] = tok.ID
 	session.Values["recipient"] = tok.Recipient
 	session.Values["codeHash"] = tok.CodeHash
@@ -34,7 +35,7 @@ func setSessionValues(session *sessions.Session, tok Token) {
 }
 
 // getSessionToken retrieves the token from session and checks expiration.
-func getSessionToken(session *sessions.Session, tokenID string) (*Token, error) {
+func getSessionToken(session *sessions.Session, tokenID string) (*store.Token, error) {
 	if session.Values["tokenID"] != tokenID {
 		return nil, errors.New("token not found")
 	}
@@ -49,7 +50,7 @@ func getSessionToken(session *sessions.Session, tokenID string) (*Token, error) 
 	}
 
 	// Return token if valid
-	return &Token{
+	return &store.Token{
 		ID:        session.Values["tokenID"].(string),
 		Recipient: session.Values["recipient"].(string),
 		CodeHash:  session.Values["codeHash"].([]byte),

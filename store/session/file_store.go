@@ -1,4 +1,4 @@
-package store
+package session
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/sessions"
+	"github.com/rlnorthcutt/go-passwordless/store"
 )
 
 // FileStore manages passwordless tokens using Gorilla Sessions with file storage.
@@ -38,7 +39,7 @@ func NewFileStore(path string, secretKey []byte) *FileStore {
 }
 
 // Store saves the token in the session.
-func (fs *FileStore) Store(ctx context.Context, tok Token) error {
+func (fs *FileStore) Store(ctx context.Context, tok store.Token) error {
 	req, rsp, err := getContextRequestResponse(ctx)
 	if err != nil {
 		return err
@@ -58,7 +59,7 @@ func (fs *FileStore) Store(ctx context.Context, tok Token) error {
 }
 
 // Exists checks if a token exists and removes it if expired.
-func (fs *FileStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
+func (fs *FileStore) Exists(ctx context.Context, tokenID string) (*store.Token, error) {
 	req, _, err := getContextRequestResponse(ctx)
 	if err != nil {
 		return nil, err
