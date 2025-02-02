@@ -15,13 +15,6 @@ type SMTPTransport struct {
 }
 
 func (t *SMTPTransport) Send(ctx context.Context, to, tokenCode string) error {
-	// Check ctx for cancellation before doing work
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
 	// Construct message
 	msg := []byte(fmt.Sprintf("Subject: Your Login Code\r\n\r\nYour code is: %s\r\n", tokenCode))
 	addr := t.Host + ":" + t.Port

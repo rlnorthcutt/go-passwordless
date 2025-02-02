@@ -12,7 +12,7 @@ import (
 )
 
 func TestMockSMTPServer(t *testing.T) {
-	port := "2525"
+	port := "2526"
 	mocksmtp.StartMockSMTPServer(port)
 
 	// Allow the server to start
