@@ -4,6 +4,19 @@
 
 `go-passwordless` is a lightweight, extensible Go library that provides a secure, passwordless authentication system. It allows applications to verify users using one-time codes sent via email, SMS, or other messaging channels, eliminating the need for passwords. This approach improves security, simplifies the user experience, and reduces the risk of credential-based attacks.
 
+## 📋 **Table of Contents**
+
+- [🛠 Key Features](#-key-features)
+- [🔍 What Problem Does It Solve?](#-what-problem-does-it-solve)
+- [🛠 How It Works](#-how-it-works)
+- [🚀 Quick Start](#-quick-start)
+- [🔗 Generating One-Time Login Links](#-generating-one-time-login-links)
+- [📖 How to Implement in Your Project](#-how-to-implement-in-your-project)
+- [🔗 Dependencies](#-dependencies)
+- [🧪 Running Tests](#-running-tests)
+- [📦 Contributing](#-contributing)
+- [📜 License](#-license)
+
 ## **🛠 Key Features**
 
 - **Token Stores:** Choose from in-memory, cookie-based, file, or database storage options.
