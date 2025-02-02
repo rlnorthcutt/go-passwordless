@@ -7,6 +7,7 @@ import (
 
 	"github.com/rlnorthcutt/go-passwordless"
 	"github.com/rlnorthcutt/go-passwordless/store"
+	"github.com/rlnorthcutt/go-passwordless/transport"
 )
 
 // Custom LogTransport that stores the code for testing
@@ -80,5 +81,37 @@ func TestPasswordlessFlow(t *testing.T) {
 				}
 			})
 		})
+	})
+
+	t.Run("NewManagerWithConfig", func(t *testing.T) {
+		memStore := store.NewMemStore()
+		logTransport := &transport.LogTransport{}
+
+		// Start with blanks to test the defaults
+		customConfig := passwordless.Config{
+			CodeLength:        0,
+			TokenExpiry:       0,
+			IDGenerator:       func() string { return "customID" },
+			CodeCharset:       "",
+			MaxFailedAttempts: 0,
+		}
+
+		mgr := passwordless.NewManagerWithConfig(memStore, logTransport, customConfig)
+
+		if mgr.Config.CodeLength != 6 {
+			t.Errorf("Expected CodeLength to be 6, got %d", mgr.Config.CodeLength)
+		}
+		if mgr.Config.TokenExpiry != 15*time.Minute {
+			t.Errorf("Expected TokenExpiry to be 15 minutes, got %v", mgr.Config.TokenExpiry)
+		}
+		if mgr.Config.IDGenerator() != "customID" {
+			t.Errorf("Expected IDGenerator to return 'customID', got %s", mgr.Config.IDGenerator())
+		}
+		if mgr.Config.CodeCharset != "0123456789" {
+			t.Errorf("Expected CodeCharset to be '0123456789', got %s", mgr.Config.CodeCharset)
+		}
+		if mgr.Config.MaxFailedAttempts != 3 {
+			t.Errorf("Expected MaxFailedAttempts to be 3, got %d", mgr.Config.MaxFailedAttempts)
+		}
 	})
 }
