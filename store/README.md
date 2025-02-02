@@ -1,5 +1,7 @@
 # **go-passwordless**
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/rlnorthcutt/go-passwordless)](https://goreportcard.com/report/github.com/rlnorthcutt/go-passwordless) ![MIT License](https://img.shields.io/badge/license-MIT-blue)
+
 `go-passwordless` is a lightweight, extensible Go library that provides a secure, passwordless authentication system. It allows applications to verify users using one-time codes sent via email, SMS, or other messaging channels, eliminating the need for passwords. This approach improves security, simplifies the user experience, and reduces the risk of credential-based attacks.
 
 ## **🛠 Key Features**
