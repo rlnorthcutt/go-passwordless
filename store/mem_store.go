@@ -1,9 +1,7 @@
 package store
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"sync"
 	"time"
@@ -71,13 +69,12 @@ func (m *MemStore) Verify(ctx context.Context, tokenID, code string) (bool, erro
 		return false, fmt.Errorf("token not found")
 	}
 
-	if time.Now().After(tok.ExpiresAt) {
+	if IsTokenExpired(&tok) {
 		delete(m.tokens, tokenID)
 		return false, fmt.Errorf("token expired")
 	}
 
-	codeHash := sha256.Sum256([]byte(code))
-	if !bytes.Equal(tok.CodeHash, codeHash[:]) {
+	if !VerifyToken(&tok, code) {
 		return false, nil
 	}
 

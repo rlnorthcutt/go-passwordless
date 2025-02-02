@@ -1,9 +1,7 @@
 package session
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"os"
 	"time"
@@ -85,9 +83,8 @@ func (fs *FileStore) Verify(ctx context.Context, tokenID, code string) (bool, er
 		return false, err
 	}
 
-	// Hash the provided code and compare with stored hash
-	codeHash := sha256.Sum256([]byte(code))
-	if !bytes.Equal(tok.CodeHash, codeHash[:]) {
+	// Verify the code
+	if !store.VerifyToken(tok, code) {
 		tok.Attempts++
 		_ = fs.Store(ctx, *tok) // Save attempts count
 		return false, errors.New("invalid code")
