@@ -8,32 +8,31 @@ import (
 	"os"
 
 	"github.com/rlnorthcutt/go-passwordless"
-	"github.com/rlnorthcutt/go-passwordless/store"
+	"github.com/rlnorthcutt/go-passwordless/store/session"
 	"github.com/rlnorthcutt/go-passwordless/transport"
 )
 
 const (
 	fileStorePath = "./session_data"
-	tokenFilePath = "./tokens.json"
 	secretKey     = "super-secret-key"
 )
 
 func main() {
-	// Ensure cleanup of session data and tokens on exit
+	// Ensure cleanup of session data after execution
 	defer cleanupFiles()
 
-	// Setup mock HTTP request and response
+	// Setup mock HTTP request and response for session handling
 	req := httptest.NewRequest("GET", "/", nil)
 	rsp := httptest.NewRecorder()
-	ctx := store.WithRequestResponse(context.Background(), req, rsp)
+	ctx := session.WithRequestResponse(context.Background(), req, rsp)
 
-	// Initialize the FileStore with a secret key
-	fileStore := store.NewFileStore(fileStorePath, []byte(secretKey))
+	// Initialize the FileStore
+	fileStore := session.NewFileStore(fileStorePath, []byte(secretKey))
 	if fileStore == nil {
 		log.Fatal("Failed to initialize FileStore")
 	}
 
-	// Initialize the passwordless manager
+	// Initialize the passwordless manager with FileStore and LogTransport
 	mgr := passwordless.NewManager(fileStore, &transport.LogTransport{})
 
 	// Prompt user for email
@@ -46,19 +45,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to start login: %v", err)
 	}
-	fmt.Println("A login code has been stored in session. Check your email (console log in this example).")
+	fmt.Println("A login code has been logged. Check the console output in this example.")
 
-	// Simulate reading back the stored token via a new request with cookies
+	// Simulate reading the stored token via a new request with session cookies
 	req2 := httptest.NewRequest("GET", "/", nil)
 	req2.Header.Set("Cookie", rsp.Header().Get("Set-Cookie"))
 	rsp2 := httptest.NewRecorder()
-	ctx2 := store.WithRequestResponse(context.Background(), req2, rsp2)
+	ctx2 := session.WithRequestResponse(context.Background(), req2, rsp2)
 
-	// Retrieve and verify token
+	// Prompt the user to enter the verification code
 	fmt.Print("Enter the verification code: ")
 	var inputCode string
 	fmt.Scanln(&inputCode)
 
+	// Verify the entered code
 	success, err := mgr.VerifyLogin(ctx2, tokenID, inputCode)
 	if err != nil {
 		log.Fatalf("Verification failed: %v", err)
@@ -71,14 +71,11 @@ func main() {
 	}
 }
 
-// cleanupFiles removes session and token data after the example finishes.
+// cleanupFiles removes session data after the example finishes.
 func cleanupFiles() {
-	fmt.Println("Cleaning up session and token files...")
+	fmt.Println("Cleaning up session data...")
 	if err := os.RemoveAll(fileStorePath); err != nil {
 		log.Printf("Failed to remove session directory: %v", err)
-	}
-	if err := os.Remove(tokenFilePath); err != nil && !os.IsNotExist(err) {
-		log.Printf("Failed to remove token file: %v", err)
 	}
 	fmt.Println("Cleanup complete.")
 }
