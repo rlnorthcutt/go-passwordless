@@ -1,5 +1,7 @@
 # **go-passwordless**
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/rlnorthcutt/go-passwordless)](https://goreportcard.com/report/github.com/rlnorthcutt/go-passwordless) ![MIT License](https://img.shields.io/badge/license-MIT-blue) [![codecov](https://codecov.io/gh/rlnorthcutt/go-passwordless/branch/main/graph/badge.svg?token=H9U15HWB4I)](https://codecov.io/gh/rlnorthcutt/go-passwordless)
+
 `go-passwordless` is a lightweight, extensible Go library that provides a secure, passwordless authentication system. It allows applications to verify users using one-time codes sent via email, SMS, or other messaging channels, eliminating the need for passwords. This approach improves security, simplifies the user experience, and reduces the risk of credential-based attacks.
 
 ## **🛠 Key Features**
@@ -70,16 +72,16 @@ func main() {
  // Create the passwordless manager
  mgr := passwordless.NewManager(memStore, logTransport)
 
- // Generate a one-time login link
- loginURL, err := mgr.GenerateLoginLink(ctx, "user@example.com", "https://myapp.com/login")
+ // Start the login process
+ tokenID, err := mgr.StartLogin(ctx, "user@example.com")
  if err != nil {
-  log.Fatalf("Error generating login link: %v", err)
+  log.Fatalf("Error starting login: %v", err)
  }
 
- log.Printf("Your one-time login link: %s", loginURL)
+ log.Printf("Login code has been sent to user@example.com")
 
- // Simulate token verification (user submits the token from the URL)
- success, err := mgr.VerifyLogin(ctx, "token-from-url", "")
+ // Simulate verifying the code (replace '123456' with the actual code sent)
+ success, err := mgr.VerifyLogin(ctx, tokenID, "123456")
  if err != nil {
   log.Fatalf("Error verifying login: %v", err)
  }
@@ -193,6 +195,12 @@ To test specific modules:
 ```bash
 go test -v ./store
 go test -v ./transport
+```
+
+To run specific subtests:
+
+```bash
+go test -run TestPasswordlessFlow ./...
 ```
 
 ## **📦 Contributing**

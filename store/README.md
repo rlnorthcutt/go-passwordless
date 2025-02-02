@@ -1,218 +1,239 @@
-# **go-passwordless**
+# **Token Storage Options in `go-passwordless`**
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/rlnorthcutt/go-passwordless)](https://goreportcard.com/report/github.com/rlnorthcutt/go-passwordless) ![MIT License](https://img.shields.io/badge/license-MIT-blue) [![codecov](https://codecov.io/gh/rlnorthcutt/go-passwordless/branch/main/graph/badge.svg?token=H9U15HWB4I)](https://codecov.io/gh/rlnorthcutt/go-passwordless)
+The `store` package provides several implementations for token storage, allowing you to choose the best option based on your application's needs. This document will help you understand the available storage options, their use cases, pros and cons, and how to implement your own custom store.
 
-`go-passwordless` is a lightweight, extensible Go library that provides a secure, passwordless authentication system. It allows applications to verify users using one-time codes sent via email, SMS, or other messaging channels, eliminating the need for passwords. This approach improves security, simplifies the user experience, and reduces the risk of credential-based attacks.
+## **Available Storage Options**
 
-## **🛠 Key Features**
+### 1. **Memory Store (`MemStore`)**
 
-- **Token Stores:** Choose from in-memory, cookie-based, file, or database storage options.
-- **Flexible Transports:** Send tokens via log output (for testing), SMTP, or custom transports.
-- **One-Time Login Links:** Automatically generate login URLs to simplify the authentication process.
-- **Customizable Expiry & Attempts**: Control token validity with expiration time _(default: 15 minutes)_ and set a maximum number of allowed verification attempts _(default: 3)_.
-- **Stateless Authentication:** No need to manage sessions or passwords.
-- **Secure by Default:** Supports encrypted token storage and best practices.
+**Description:**
+Stores tokens in-memory using a simple map, making it suitable for short-lived sessions and development environments.
 
-## **🔍 What Problem Does It Solve?**
+**Use Cases:**
 
-Managing passwords is challenging and comes with security risks such as:
+- Suitable for local development and testing.
+- Temporary in-memory authentication where persistence is not required.
 
-- **Security vulnerabilities:** Password leaks, brute-force attacks, and phishing.
-- **User friction:** Users often forget passwords, leading to frequent resets.
-- **Storage concerns:** Securely storing and hashing passwords requires careful implementation.
+**Pros:**
 
-`go-passwordless` eliminates these concerns by providing a **passwordless authentication flow**, enabling users to log in with one-time codes or links via email, SMS, or other means.
+- Fast and lightweight.
+- No external dependencies.
+- Easy to use and set up.
 
-## **🛠 How It Works**
+**Cons:**
 
-1. **User Initiates Login:**
-   - The application calls `StartLogin()` with the recipient's email/phone number.
-   - A secure, time-limited token is generated and stored.
-   - The token is sent via a transport method (email, SMS, etc.).
+- Tokens are lost when the application restarts.
+- Not suitable for distributed or production environments.
 
-2. **User Clicks Login Link or Enters Code:**
-   - If using codes, the user manually inputs it into the application.
-   - If using links, they click the provided one-time login URL.
-
-3. **Successful Verification:**
-   - If valid, authentication succeeds, and the token is deleted.
-   - If expired or incorrect, authentication fails.
-
-## **🚀 Quick Start**
-
-### **Installation**
-
-```bash
-go get github.com/rlnorthcutt/go-passwordless
-```
-
-### **Basic Usage Example**
-
-```go
-package main
-
-import (
- "context"
- "log"
-
- "github.com/rlnorthcutt/go-passwordless"
- "github.com/rlnorthcutt/go-passwordless/store"
- "github.com/rlnorthcutt/go-passwordless/transport"
-)
-
-func main() {
- ctx := context.Background()
-
- // Initialize token store (choose MemStore for ephemeral storage)
- memStore := store.NewMemStore()
-
- // Initialize transport (LogTransport for development)
- logTransport := &transport.LogTransport{}
-
- // Create the passwordless manager
- mgr := passwordless.NewManager(memStore, logTransport)
-
- // Start the login process
- tokenID, err := mgr.StartLogin(ctx, "user@example.com")
- if err != nil {
-  log.Fatalf("Error starting login: %v", err)
- }
-
- log.Printf("Login code has been sent to user@example.com")
-
- // Simulate verifying the code (replace '123456' with the actual code sent)
- success, err := mgr.VerifyLogin(ctx, tokenID, "123456")
- if err != nil {
-  log.Fatalf("Error verifying login: %v", err)
- }
-
- if success {
-  log.Println("Login successful!")
- } else {
-  log.Println("Invalid token!")
- }
-}
-```
-
-## **🔗 Generating One-Time Login Links**
-
-The `GenerateLoginLink()` helper simplifies the process of sending users a one-time login link, allowing them to authenticate by clicking the link.
-
-### **How to Use It:**
-
-```go
-ctx := context.Background()
-
-mgr := passwordless.NewManager(store.NewMemStore(), &transport.LogTransport{})
-loginURL, err := mgr.GenerateLoginLink(ctx, "user@example.com", "https://myapp.com/login")
-if err != nil {
-    log.Fatalf("Error generating login link: %v", err)
-}
-
-log.Println("Login link:", loginURL)
-```
-
-### **Example Output:**
-
-```bash
-Login link: https://myapp.com/login?token=abc123xyz
-```
-
-### **How to Handle the Link in Your Frontend:**
-
-When the user clicks the link, your frontend should extract the `token` parameter and send it to your backend for verification.
-
-Example frontend handler in JavaScript:
-
-```javascript
-const params = new URLSearchParams(window.location.search);
-const token = params.get('token');
-
-fetch('https://api.myapp.com/verify', {
-    method: 'POST',
-    body: JSON.stringify({ token }),
-    headers: { 'Content-Type': 'application/json' },
-})
-  .then(response => response.json())
-  .then(data => {
-      if (data.success) {
-          console.log('Login successful!');
-      } else {
-          console.error('Invalid or expired token');
-      }
-  });
-```
-
-## **📖 How to Implement in Your Project**
-
-### **Step 1: Install the package**
-
-```bash
-go get github.com/rlnorthcutt/go-passwordless
-```
-
-### **Step 2: Choose Storage and Transport**
-
-Example using `MemStore` and `SMTPTransport`:
+**Usage Example:**
 
 ```go
 memStore := store.NewMemStore()
-smtpTransport := &transport.SMTPTransport{
-    Host: "smtp.example.com",
-    Port: "587",
-    From: "noreply@example.com",
-    Auth: smtp.PlainAuth("", "user", "pass", "smtp.example.com"),
-}
-
-mgr := passwordless.NewManager(memStore, smtpTransport)
 ```
 
-### **Step 3: Start Login and Verify**
+### 2. **Cookie Store (`CookieStore`)**
+
+**Description:**
+Stores encrypted tokens in the user's browser cookies, ensuring that authentication works without requiring server-side storage.
+
+**Use Cases:**
+
+- Stateless authentication where no server-side storage is preferred.
+- Applications with minimal backend requirements.
+
+**Pros:**
+
+- No server-side storage required.
+- Easy to integrate with web applications.
+- Persistent across sessions until the cookie expires.
+
+**Cons:**
+
+- Limited by cookie size (~4KB).
+- Prone to client-side attacks if not properly secured.
+- Requires proper security settings (e.g., `HttpOnly`, `Secure`, `SameSite`).
+
+**Usage Example:**
 
 ```go
-tokenID, _ := mgr.StartLogin(context.Background(), "user@example.com")
-success, _ := mgr.VerifyLogin(context.Background(), tokenID, "123456")
+secretKey := []byte("super-secret-key")
+cookieStore := store.NewCookieStore(secretKey)
 ```
 
-## **🔗 Dependencies**
+### 3. **Database Store (`DbStore`)**
 
-`go-passwordless` has minimal dependencies to ensure lightweight performance:
+**Description:**
+Stores tokens securely in an SQL database, providing persistent and reliable storage.
 
-- `github.com/gorilla/securecookie` (for secure cookie handling).
-- `modernc.org/sqlite` (for database storage in `DbStore`).
-- `net/smtp` (for email transport).
+**Use Cases:**
 
-## **🧪 Running Tests**
+- Applications that require persistent authentication tokens.
+- Distributed or cloud-based environments.
 
-Run tests to ensure the implementation works correctly:
+**Pros:**
 
-```bash
-go test -v ./...
+- Tokens persist across server restarts.
+- Can be scaled with distributed deployments.
+- Centralized token management.
+
+**Cons:**
+
+- Slightly slower compared to memory-based solutions.
+- Requires database setup and maintenance.
+- Additional dependencies (e.g., SQLite, PostgreSQL).
+
+**Usage Example:**
+
+```go
+db, err := sql.Open("sqlite", "tokens.db")
+if err != nil {
+    log.Fatal(err)
+}
+dbStore := store.NewDbStore(db, "tokens")
 ```
 
-To test specific modules:
+### 4. **File Store (`FileStore`)**
 
-```bash
-go test -v ./store
-go test -v ./transport
+**Description:**
+Stores tokens as encrypted session files on disk, allowing persistent authentication without needing a database.
+
+**Use Cases:**
+
+- Local or small-scale applications needing persistent sessions.
+- Offline applications where cloud storage isn't an option.
+- Lightweight alternative to databases.
+
+**Pros:**
+
+- Easy setup without an external database.
+- Persistent across restarts.
+- Simple and reliable for single-instance applications.
+
+**Cons:**
+
+- Slower compared to memory storage due to disk I/O.
+- Not suitable for distributed or multi-node applications.
+- Requires file management and cleanup.
+
+**Usage Example:**
+
+```go
+secretKey := []byte("super-secret-key")
+fileStore := store.NewFileStore("./session_data", secretKey)
 ```
 
-To run specific subtests:
+## **Choosing the Right Storage Option**
 
-```bash
-go test -run TestPasswordlessFlow ./...
+| Feature          | MemStore      | CookieStore   | DbStore       | FileStore     |
+|-----------------|---------------|---------------|---------------|---------------|
+| Persistence     | ❌ (no)        | ✅ (limited)   | ✅ (permanent) | ✅ (persistent) |
+| Performance     | ✅ (fastest)   | ✅ (fast)      | ⚠️ (depends on DB) | ⚠️ (slower than memory) |
+| Scalability     | ❌ (single node) | ✅ (stateless) | ✅ (multi-node) | ❌ (single-node) |
+| Setup Effort    | ✅ (none)       | ✅ (minimal)   | ⚠️ (moderate)  | ✅ (simple setup)  |
+| Security        | ⚠️ (limited)    | ⚠️ (browser-based) | ✅ (secure storage) | ✅ (secure storage) |
+
+## **How to Implement Your Own Token Store**
+
+If the existing storage options don't fit your needs, you can create your own by implementing the `TokenStore` interface.
+
+### **Interface Definition:**
+
+```go
+type TokenStore interface {
+    Store(ctx context.Context, token Token) error
+    Exists(ctx context.Context, tokenID string) (*Token, error)
+    Verify(ctx context.Context, tokenID, code string) (bool, error)
+    Delete(ctx context.Context, tokenID string) error
+}
 ```
 
-## **📦 Contributing**
+### **Steps to Create a Custom Store:**
 
-We welcome contributions! If you'd like to contribute:
+1. **Define a struct that implements the `TokenStore` interface.**  
+   Example:
 
-1. Fork the repository.
-2. Create a feature branch.
-3. Submit a pull request with a detailed description.
+   ```go
+   type MyCustomStore struct {
+       tokens map[string]store.Token
+   }
 
-If you have any questions or suggestions, feel free to open an issue on [GitHub](https://github.com/rlnorthcutt/go-passwordless/issues).
+   func NewMyCustomStore() *MyCustomStore {
+       return &MyCustomStore{tokens: make(map[string]store.Token)}
+   }
+   ```
 
-## **📜 License**
+2. **Implement the `Store` method to save tokens.**
 
-`go-passwordless` is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
+   ```go
+   func (s *MyCustomStore) Store(ctx context.Context, tok store.Token) error {
+       s.tokens[tok.ID] = tok
+       return nil
+   }
+   ```
+
+3. **Implement the `Exists` method to retrieve tokens.**
+
+   ```go
+   func (s *MyCustomStore) Exists(ctx context.Context, tokenID string) (*store.Token, error) {
+       tok, exists := s.tokens[tokenID]
+       if !exists {
+           return nil, fmt.Errorf("token not found")
+       }
+       return &tok, nil
+   }
+   ```
+
+4. **Implement the `Verify` method to validate tokens.**
+
+   ```go
+   func (s *MyCustomStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
+       tok, exists := s.tokens[tokenID]
+       if !exists {
+           return false, fmt.Errorf("token not found")
+       }
+       return string(tok.CodeHash) == code, nil
+   }
+   ```
+
+5. **Implement the `Delete` method to remove tokens.**
+
+   ```go
+   func (s *MyCustomStore) Delete(ctx context.Context, tokenID string) error {
+       delete(s.tokens, tokenID)
+       return nil
+   }
+   ```
+
+6. **Use your custom store in your application.**
+
+   ```go
+   customStore := NewMyCustomStore()
+   err := customStore.Store(context.Background(), store.Token{ID: "test", Recipient: "user@test.com"})
+   ```
+
+## **Security Considerations**
+
+When choosing or implementing a token store, consider the following:
+
+1. **Data Sensitivity:**
+   - Use encryption to store tokens securely in databases and cookies.
+
+2. **Token Expiry:**
+   - Ensure tokens are expired and removed after their intended lifespan.
+
+3. **Secure Cookie Flags:**
+   - Always use `Secure`, `HttpOnly`, and `SameSite` flags when using cookies.
+
+4. **Rate Limiting:**
+   - Protect verification endpoints from brute-force attacks.
+
+5. **Logging:**
+   - Avoid logging sensitive token data.
+
+## **Conclusion**
+
+- Use **`MemStore`** for testing or short-lived tokens.
+- Use **`CookieStore`** for lightweight, stateless authentication.
+- Use **`DbStore`** for persistent, scalable solutions.
+- Use **`FileStore`** for persistent, file-based storage.
+- Implement a **custom store** if your requirements are unique.
