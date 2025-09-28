@@ -3,6 +3,7 @@ package passwordless
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"net/url"
@@ -48,15 +49,21 @@ func (m *Manager) VerifyLoginLink(ctx context.Context, tokenID, providedHash str
 
 	// Hash the stored code and compare it with the hash from the URL
 	expectedHash := sha256.Sum256(tok.CodeHash)
-	expectedHashStr := hex.EncodeToString(expectedHash[:])
+	expectedHashHex := make([]byte, hex.EncodedLen(len(expectedHash)))
+	hex.Encode(expectedHashHex, expectedHash[:])
 
-	if providedHash != expectedHashStr {
+	providedHashBytes := []byte(providedHash)
+
+	if len(providedHashBytes) != len(expectedHashHex) ||
+		subtle.ConstantTimeCompare(expectedHashHex, providedHashBytes) != 1 {
 		tok.Attempts++
 		if tok.Attempts >= m.Config.MaxFailedAttempts {
 			_ = m.Store.Delete(ctx, tokenID)
 			return false, fmt.Errorf("too many failed attempts, token deleted")
 		}
-		_ = m.Store.Store(ctx, *tok)
+		if err := m.Store.UpdateAttempts(ctx, tokenID, tok.Attempts); err != nil {
+			return false, fmt.Errorf("failed to persist attempt count: %w", err)
+		}
 		return false, fmt.Errorf("invalid login link")
 	}
 
