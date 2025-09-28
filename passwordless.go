@@ -1,12 +1,12 @@
 package passwordless
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"log"
+	"math/big"
 	"time"
 
 	"github.com/rlnorthcutt/go-passwordless/store"
@@ -99,7 +99,7 @@ func (m *Manager) StartLogin(ctx context.Context, recipient string) (string, err
 func (m *Manager) VerifyLogin(ctx context.Context, tokenID, code string) (bool, error) {
 	tok, err := m.Store.Exists(ctx, tokenID)
 	if err != nil {
-		return false, fmt.Errorf("token not found")
+		return false, err
 	}
 
 	// Check expiration time
@@ -108,16 +108,17 @@ func (m *Manager) VerifyLogin(ctx context.Context, tokenID, code string) (bool, 
 		return false, fmt.Errorf("token expired")
 	}
 
-	// Hash and compare the provided code
-	codeHash := sha256.Sum256([]byte(code))
-	if !bytes.Equal(tok.CodeHash, codeHash[:]) {
+	// Compare the provided code in constant time
+	if !store.VerifyToken(tok, code) {
 		tok.Attempts++
 		if tok.Attempts >= m.Config.MaxFailedAttempts {
 			_ = m.Store.Delete(ctx, tokenID)
 			return false, fmt.Errorf("too many failed attempts, token deleted")
 		}
 		// Store updated attempt count
-		_ = m.Store.Store(ctx, *tok)
+		if err := m.Store.UpdateAttempts(ctx, tokenID, tok.Attempts); err != nil {
+			return false, fmt.Errorf("failed to persist attempt count: %w", err)
+		}
 		log.Printf("invalid code, attempts remaining: %d", m.Config.MaxFailedAttempts-tok.Attempts)
 		return false, fmt.Errorf("invalid code")
 	}
@@ -129,13 +130,39 @@ func (m *Manager) VerifyLogin(ctx context.Context, tokenID, code string) (bool, 
 
 // generateCode produces a random code (numeric or alphanumeric) based on the config.
 func (m *Manager) generateCode(length int, charset string) (string, error) {
-	buf := make([]byte, length)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
+	if length <= 0 {
+		return "", fmt.Errorf("code length must be positive")
 	}
+	if len(charset) == 0 {
+		return "", fmt.Errorf("code charset must not be empty")
+	}
+
 	out := make([]byte, length)
-	for i := 0; i < length; i++ {
-		out[i] = charset[int(buf[i])%len(charset)]
+	charsetLen := len(charset)
+
+	if charsetLen > 256 {
+		// Fall back to big.Int sampling to avoid modulo bias when the charset is very large.
+		for i := 0; i < length; i++ {
+			n, err := rand.Int(rand.Reader, big.NewInt(int64(charsetLen)))
+			if err != nil {
+				return "", err
+			}
+			out[i] = charset[n.Int64()]
+		}
+		return string(out), nil
+	}
+
+	maxMultiple := 256 / charsetLen * charsetLen
+	for i := 0; i < length; {
+		var b [1]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", err
+		}
+		if int(b[0]) >= maxMultiple {
+			continue
+		}
+		out[i] = charset[int(b[0])%charsetLen]
+		i++
 	}
 	return string(out), nil
 }

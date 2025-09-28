@@ -54,6 +54,27 @@ func (m *MemStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
 	return &tok, nil
 }
 
+func (m *MemStore) UpdateAttempts(ctx context.Context, tokenID string, attempts int) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	tok, ok := m.tokens[tokenID]
+	if !ok {
+		return fmt.Errorf("token not found")
+	}
+
+	tok.Attempts = attempts
+	m.tokens[tokenID] = tok
+
+	return nil
+}
+
 func (m *MemStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
 	select {
 	case <-ctx.Done():

@@ -45,8 +45,8 @@ func (s *DbStore) Store(ctx context.Context, tok Token) error {
 // If the token is expired, it is deleted automatically.
 func (s *DbStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
 	query := fmt.Sprintf(`
-		SELECT id, recipient, code_hash, expires_at, created_at, attempts
-		FROM %s WHERE id = ?`, s.TableName)
+                SELECT id, recipient, code_hash, expires_at, created_at, attempts
+                FROM %s WHERE id = ?`, s.TableName)
 
 	var tok Token
 	err := s.DB.QueryRowContext(ctx, query, tokenID).Scan(
@@ -71,6 +71,22 @@ func (s *DbStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
 	}
 
 	return &tok, nil
+}
+
+// UpdateAttempts updates the failed-attempt counter for a token without altering other fields.
+func (s *DbStore) UpdateAttempts(ctx context.Context, tokenID string, attempts int) error {
+	query := fmt.Sprintf(`UPDATE %s SET attempts = ? WHERE id = ?`, s.TableName)
+
+	res, err := s.DB.ExecContext(ctx, query, attempts, tokenID)
+	if err != nil {
+		return fmt.Errorf("failed to update token attempts: %w", err)
+	}
+
+	if rows, err := res.RowsAffected(); err == nil && rows == 0 {
+		return fmt.Errorf("token not found")
+	}
+
+	return nil
 }
 
 // Verify checks whether the provided code matches the stored hash.

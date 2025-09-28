@@ -1,9 +1,9 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"time"
 )
 
@@ -26,6 +26,10 @@ type TokenStore interface {
 	// Exists checks if a token with a given ID exists (and returns it if so).
 	Exists(ctx context.Context, tokenID string) (*Token, error)
 
+	// UpdateAttempts persists the latest failed-attempt count for the given token ID.
+	// Implementations should not reset expiry or other fields when updating attempts.
+	UpdateAttempts(ctx context.Context, tokenID string, attempts int) error
+
 	// Verify checks if `code` matches the stored hash for tokenID, and
 	// whether it's still valid. If valid, it may also consume or remove the token.
 	Verify(ctx context.Context, tokenID, code string) (bool, error)
@@ -43,5 +47,8 @@ func IsTokenExpired(tok *Token) bool {
 func VerifyToken(tok *Token, code string) bool {
 	codeHash := sha256.Sum256([]byte(code))
 	// Securely compares two hashes using constant-time comparison.
-	return bytes.Equal(codeHash[:], tok.CodeHash)
+	if len(tok.CodeHash) != len(codeHash) {
+		return false
+	}
+	return subtle.ConstantTimeCompare(codeHash[:], tok.CodeHash) == 1
 }
