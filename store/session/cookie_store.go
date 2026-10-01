@@ -81,6 +81,22 @@ func (cs *CookieStore) Exists(ctx context.Context, tokenID string) (*store.Token
 	return tok, nil
 }
 
+// IncrementAttempts increments and persists the failed-attempt counter for
+// the session's token and returns the new count.
+func (cs *CookieStore) IncrementAttempts(ctx context.Context, tokenID string) (int, error) {
+	tok, err := cs.Exists(ctx, tokenID)
+	if err != nil {
+		return 0, err
+	}
+
+	tok.Attempts++
+	if err := cs.Store(ctx, *tok); err != nil {
+		return 0, err
+	}
+
+	return tok.Attempts, nil
+}
+
 // Verify checks if the provided code matches the stored token's hash.
 func (cs *CookieStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
 	tok, err := cs.Exists(ctx, tokenID)

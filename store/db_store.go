@@ -73,20 +73,37 @@ func (s *DbStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
 	return &tok, nil
 }
 
-// UpdateAttempts updates the failed-attempt counter for a token without altering other fields.
-func (s *DbStore) UpdateAttempts(ctx context.Context, tokenID string, attempts int) error {
-	query := fmt.Sprintf(`UPDATE %s SET attempts = ? WHERE id = ?`, s.TableName)
+// IncrementAttempts atomically increments the failed-attempt counter for a
+// token and returns the new count. The increment itself is a single `attempts
+// = attempts + 1` UPDATE, which the database applies as an atomic, row-locked
+// operation, so concurrent callers for the same token never lose an
+// increment. The count is then read back with a separate SELECT; it may
+// reflect a concurrent caller's increment too, which is fine since the
+// caller only needs an accurate current count to compare against the
+// failed-attempt threshold.
+func (s *DbStore) IncrementAttempts(ctx context.Context, tokenID string) (int, error) {
+	updateQuery := fmt.Sprintf(`UPDATE %s SET attempts = attempts + 1 WHERE id = ?`, s.TableName)
 
-	res, err := s.DB.ExecContext(ctx, query, attempts, tokenID)
+	res, err := s.DB.ExecContext(ctx, updateQuery, tokenID)
 	if err != nil {
-		return fmt.Errorf("failed to update token attempts: %w", err)
+		return 0, fmt.Errorf("failed to update token attempts: %w", err)
 	}
 
-	if rows, err := res.RowsAffected(); err == nil && rows == 0 {
-		return fmt.Errorf("token not found")
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to confirm token attempts update: %w", err)
+	}
+	if rows == 0 {
+		return 0, fmt.Errorf("token not found")
 	}
 
-	return nil
+	selectQuery := fmt.Sprintf(`SELECT attempts FROM %s WHERE id = ?`, s.TableName)
+	var attempts int
+	if err := s.DB.QueryRowContext(ctx, selectQuery, tokenID).Scan(&attempts); err != nil {
+		return 0, fmt.Errorf("failed to read updated token attempts: %w", err)
+	}
+
+	return attempts, nil
 }
 
 // Verify checks whether the provided code matches the stored hash.

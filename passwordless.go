@@ -99,7 +99,7 @@ func (m *Manager) StartLogin(ctx context.Context, recipient string) (string, err
 func (m *Manager) VerifyLogin(ctx context.Context, tokenID, code string) (bool, error) {
 	tok, err := m.Store.Exists(ctx, tokenID)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("token not found")
 	}
 
 	// Check expiration time
@@ -110,16 +110,17 @@ func (m *Manager) VerifyLogin(ctx context.Context, tokenID, code string) (bool, 
 
 	// Compare the provided code in constant time
 	if !store.VerifyToken(tok, code) {
-		tok.Attempts++
-		if tok.Attempts >= m.Config.MaxFailedAttempts {
+		// Atomically increment so concurrent attempts for the same token
+		// can't race past MaxFailedAttempts.
+		attempts, err := m.Store.IncrementAttempts(ctx, tokenID)
+		if err != nil {
+			return false, fmt.Errorf("failed to persist attempt count: %w", err)
+		}
+		if attempts >= m.Config.MaxFailedAttempts {
 			_ = m.Store.Delete(ctx, tokenID)
 			return false, fmt.Errorf("too many failed attempts, token deleted")
 		}
-		// Store updated attempt count
-		if err := m.Store.UpdateAttempts(ctx, tokenID, tok.Attempts); err != nil {
-			return false, fmt.Errorf("failed to persist attempt count: %w", err)
-		}
-		log.Printf("invalid code, attempts remaining: %d", m.Config.MaxFailedAttempts-tok.Attempts)
+		log.Printf("invalid code, attempts remaining: %d", m.Config.MaxFailedAttempts-attempts)
 		return false, fmt.Errorf("invalid code")
 	}
 

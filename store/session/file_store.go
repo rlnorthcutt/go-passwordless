@@ -76,6 +76,22 @@ func (fs *FileStore) Exists(ctx context.Context, tokenID string) (*store.Token, 
 	return tok, nil
 }
 
+// IncrementAttempts increments and persists the failed-attempt counter for
+// the session's token and returns the new count.
+func (fs *FileStore) IncrementAttempts(ctx context.Context, tokenID string) (int, error) {
+	tok, err := fs.Exists(ctx, tokenID)
+	if err != nil {
+		return 0, err
+	}
+
+	tok.Attempts++
+	if err := fs.Store(ctx, *tok); err != nil {
+		return 0, err
+	}
+
+	return tok.Attempts, nil
+}
+
 // Verify checks if the provided code matches the stored token's hash.
 func (fs *FileStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
 	tok, err := fs.Exists(ctx, tokenID)

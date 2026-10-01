@@ -3,10 +3,11 @@ package passwordless
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"net/url"
+
+	"github.com/rlnorthcutt/go-passwordless/store"
 )
 
 // GenerateLoginLink generates a one-time login link containing a token and hashed code.
@@ -52,17 +53,16 @@ func (m *Manager) VerifyLoginLink(ctx context.Context, tokenID, providedHash str
 	expectedHashHex := make([]byte, hex.EncodedLen(len(expectedHash)))
 	hex.Encode(expectedHashHex, expectedHash[:])
 
-	providedHashBytes := []byte(providedHash)
-
-	if len(providedHashBytes) != len(expectedHashHex) ||
-		subtle.ConstantTimeCompare(expectedHashHex, providedHashBytes) != 1 {
-		tok.Attempts++
-		if tok.Attempts >= m.Config.MaxFailedAttempts {
+	if !store.SecureCompare(expectedHashHex, []byte(providedHash)) {
+		// Atomically increment so concurrent attempts for the same token
+		// can't race past MaxFailedAttempts.
+		attempts, err := m.Store.IncrementAttempts(ctx, tokenID)
+		if err != nil {
+			return false, fmt.Errorf("failed to persist attempt count: %w", err)
+		}
+		if attempts >= m.Config.MaxFailedAttempts {
 			_ = m.Store.Delete(ctx, tokenID)
 			return false, fmt.Errorf("too many failed attempts, token deleted")
-		}
-		if err := m.Store.UpdateAttempts(ctx, tokenID, tok.Attempts); err != nil {
-			return false, fmt.Errorf("failed to persist attempt count: %w", err)
 		}
 		return false, fmt.Errorf("invalid login link")
 	}

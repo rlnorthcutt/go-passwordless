@@ -54,10 +54,10 @@ func (m *MemStore) Exists(ctx context.Context, tokenID string) (*Token, error) {
 	return &tok, nil
 }
 
-func (m *MemStore) UpdateAttempts(ctx context.Context, tokenID string, attempts int) error {
+func (m *MemStore) IncrementAttempts(ctx context.Context, tokenID string) (int, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return 0, ctx.Err()
 	default:
 	}
 
@@ -66,13 +66,13 @@ func (m *MemStore) UpdateAttempts(ctx context.Context, tokenID string, attempts 
 
 	tok, ok := m.tokens[tokenID]
 	if !ok {
-		return fmt.Errorf("token not found")
+		return 0, fmt.Errorf("token not found")
 	}
 
-	tok.Attempts = attempts
+	tok.Attempts++
 	m.tokens[tokenID] = tok
 
-	return nil
+	return tok.Attempts, nil
 }
 
 func (m *MemStore) Verify(ctx context.Context, tokenID, code string) (bool, error) {
